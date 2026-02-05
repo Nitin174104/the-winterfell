@@ -9,7 +9,9 @@ import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
-export default function RecipeResults() {
+import { Suspense } from "react";
+
+function SearchResultsContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   
@@ -178,5 +180,13 @@ export default function RecipeResults() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function RecipeResults() {
+  return (
+    <Suspense fallback={<div className="min-h-screen mesh-gradient flex items-center justify-center text-white">Loading...</div>}>
+      <SearchResultsContent />
+    </Suspense>
   );
 }
