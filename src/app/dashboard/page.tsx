@@ -40,6 +40,12 @@ export default function Dashboard() {
           Vibe<span className="text-[var(--color-creamy-gold)]">Bite</span>
         </h1>
         <div className="flex items-center gap-6">
+          <Link 
+            href="/"
+            className="flex items-center gap-2 px-4 py-2 rounded-full glass-card hover:bg-white/10 transition-colors text-sm font-medium text-gray-300"
+          >
+            ← Back
+          </Link>
           <div className="flex items-center gap-3 glass-card px-4 py-2 rounded-full">
             {session?.user?.image ? (
               <img src={session.user.image} alt="Profile" className="w-8 h-8 rounded-full border border-white/20" />
