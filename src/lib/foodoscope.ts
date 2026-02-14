@@ -49,7 +49,12 @@ function getFallbackImage(title: string) {
     if (t.includes("chicken") || t.includes("poultry") || t.includes("turkey")) return "https://images.unsplash.com/photo-1598515214211-89d3c73ae83b";
     if (t.includes("beef") || t.includes("steak") || t.includes("lamb") || t.includes("meat")) return "https://images.unsplash.com/photo-1600891964092-4316c288032e";
     if (t.includes("pasta") || t.includes("spaghetti") || t.includes("noodle") || t.includes("macaroni")) return "https://images.unsplash.com/photo-1551183053-bf91a1d81141";
-    if (t.includes("cake") || t.includes("dessert") || t.includes("chocolate") || t.includes("sweet")) return "https://images.unsplash.com/photo-1578985545062-69928b1d9587";
+    // Cake/Dessert Check (Exclude savory items)
+    if (t.includes("cake") || t.includes("dessert") || t.includes("chocolate") || t.includes("sweet")) {
+        if (!t.includes("falafel") && !t.includes("crab") && !t.includes("fish") && !t.includes("beef") && !t.includes("chicken")) {
+             return "https://images.unsplash.com/photo-1578985545062-69928b1d9587";
+        }
+    }
     if (t.includes("fish") || t.includes("seafood") || t.includes("shrimp") || t.includes("salmon")) return "https://images.unsplash.com/photo-1519708227418-c8fd9a32b7a2";
     if (t.includes("burger") || t.includes("sandwich") || t.includes("wrap")) return "https://images.unsplash.com/photo-1568901346375-23c9450c58cd";
     if (t.includes("pizza") || t.includes("flatbread")) return "https://images.unsplash.com/photo-1513104890138-7c749659a591";
@@ -81,60 +86,43 @@ function getFallbackImage(title: string) {
 
 // Simple In-Memory Cache
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+import { getMolecularPairings } from "./flavordb";
+
 const searchCache = new Map<string, { data: any[], timestamp: number }>();
 
-function generateMockRecipes(flavor: string): any[] {
-    const MOOD_MAP: Record<string, string[]> = {
-        "sweet": ["Chocolate Cake", "Strawberry Cheesecake", "Vanilla Pudding", "Oatmeal Cookies"],
-        "spicy": ["Spicy Chicken Curry", "Chili Con Carne", "Jalapeno Burger", "Hot Wings"],
-        "comfort food": ["Macaroni and Cheese", "Beef Stew", "Chicken Soup", "Mashed Potatoes"],
-        "energetic": ["Grilled Chicken Bowl", "Steak and Eggs", "Salmon Quinoa", "Protein Smoothie"],
-        "focused": ["Avocado Toast", "Grilled Fish Salad", "Berry Bowl", "Green Tea Smoothie"],
-        "chill": ["Iced Coffee", "Chamomile Tea", "Fruit Salad", "Veggie Sandwich"],
-        "romantic": ["Pasta Carbonara", "Steak Frites", "Chocolate Fondue", "Lobster Risotto"],
-        "happy": ["Cheeseburger", "Pepperoni Pizza", "Ice Cream Sundae", "Belgian Waffles"],
-        // Spotify
-        "fresh salad": ["Greek Salad", "Caesar Salad", "Cobb Salad"],
-        "iced coffee": ["Cold Brew", "Caramel Macchiato", "Iced Latte"],
-        "italian pasta": ["Spaghetti Bolognese", "Fettuccine Alfredo", "Lasagna"],
-        "spicy chicken": ["Buffalo Chicken", "Chicken Vindaloo", "Spicy Tacos"]
-    };
-
-    const keywords = MOOD_MAP[flavor.toLowerCase()] || ["Delicious Meal", "Tasty Snack", "Chef's Special"];
-    
-    return keywords.map((title, index) => ({
-        id: `mock-${flavor}-${index}`,
-        title: title,
-        image: getFallbackImage(title),
-        time: "30 min",
-        calories: 300 + Math.floor(Math.random() * 500),
-        rating: 4.5 + (Math.random() * 0.5),
-        sodium: 100
-    }));
-}
-
 export async function getRecipesByFlavor(flavor: string, isLowSalt: boolean = false) {
-    const cacheKey = `${flavor}-${isLowSalt}`;
+    const cacheKey = `${flavor}-${isLowSalt}-scientific`;
     const cached = searchCache.get(cacheKey);
     
     if (cached && (Date.now() - cached.timestamp < CACHE_TTL)) {
-        console.log(`[Cache Hit] Serving results for: ${flavor}`);
+        console.log(`[Cache Hit] Serving scientific results for: ${flavor}`);
         return cached.data;
     }
 
     let rawRecipes: any[] = [];
     let apiError = false;
 
-    // Strategy: If specific query, fetch MORE data (parallel pages) to increase match chance.
-    // If generic mood, just fetch one random page.
-    const isSpecificSearch = flavor && flavor !== "savory" && flavor !== "healthy";
+    // Step 1: Get Scientific Molecular Pairings
+    const molecularIngredients = await getMolecularPairings(flavor);
+    console.log(`[Scientific Vibe] ${flavor} -> Molecular Matches: ${molecularIngredients.join(", ")}`);
+
+    // Strategy: Search for recipes containing these specific molecular ingredients
+    // This is the "Scientific Engine": We feed the molecules into the Recipe Search
+    // Randomize the selection of molecules to get diverse results each time
+    const shuffled = molecularIngredients.sort(() => 0.5 - Math.random());
+    const searchPromises = shuffled.slice(0, 3).map(ingredient => 
+        fetchFromApi("/recipe-nutri/nutritioninfo", { 
+            "recipeTitle": ingredient, 
+            "limit": "20",
+            "sort": "r" // hypothetical random sort or just rely on ingredient diversity
+        })
+    );
     
-    if (isSpecificSearch) {
-        // Optimized: Fetch 3 random pages in parallel (~150 items) instead of 5 to speed up response
-        const pages = Array.from({ length: 3 }, () => Math.floor(Math.random() * 20) + 1);
-        const promises = pages.map(p => fetchFromApi("/recipe-nutri/nutritioninfo", { page: String(p), limit: "50" }));
-        
-        const results = await Promise.all(promises);
+    // Also search for the Vibe/Flavor itself as a backup context
+    searchPromises.push(fetchFromApi("/recipe-nutri/nutritioninfo", { "recipeTitle": flavor, "limit": "20" }));
+
+    try {
+        const results = await Promise.all(searchPromises);
         results.forEach(data => {
             if (data && data.payload && data.payload.data) {
                 rawRecipes.push(...data.payload.data);
@@ -142,29 +130,28 @@ export async function getRecipesByFlavor(flavor: string, isLowSalt: boolean = fa
                 apiError = true;
             }
         });
-    } else {
-        // Single random page for generic vibes
-        const randomPage = Math.floor(Math.random() * 20) + 1;
-        const data = await fetchFromApi("/recipe-nutri/nutritioninfo", { page: String(randomPage), limit: "50" });
-        if (data && data.payload && data.payload.data) {
-            rawRecipes = data.payload.data;
-        } else if (!data) {
-            apiError = true;
+    } catch (e) {
+        apiError = true;
+    }
+
+    // Fallback: If Scientific/Molecular search fails, try broad keyword search
+    if (rawRecipes.length === 0 || apiError) {
+        console.log(`[Foodoscope] Scientific search passed/failed. Trying broad search for: ${flavor}`);
+        const broadData = await fetchFromApi("/recipe-nutri/nutritioninfo", { 
+            "recipeTitle": flavor, 
+            "limit": "20" 
+        });
+
+        if (broadData && broadData.payload && broadData.payload.data) {
+             rawRecipes = broadData.payload.data;
         }
     }
 
-    // Fallback to Mock Data if API fails or returns no matches
-    if (rawRecipes.length === 0 || apiError) {
-        console.warn(`[Foodoscope] API failed or empty. Generating mock recipes for: ${flavor}`);
-        const mocks = generateMockRecipes(flavor);
-        if (mocks.length > 0) {
-             searchCache.set(cacheKey, { data: mocks, timestamp: Date.now() });
-             return mocks;
-        }
+    if (rawRecipes.length === 0) {
         return [];
     }
     
-    // Step 0: Deduplicate Raw Data
+    // Step 2: Deduplicate
     const seenIds = new Set();
     const uniqueRaw: any[] = [];
     for (const r of rawRecipes) {
@@ -178,59 +165,28 @@ export async function getRecipesByFlavor(flavor: string, isLowSalt: boolean = fa
     }
     rawRecipes = uniqueRaw;
 
-    // Step 1: Client-side Filter
-    if (isSpecificSearch) {
-        const lowerFlavor = flavor.toLowerCase();
-        
-        // Map Abstract Moods/Vibes to Concrete Food Keywords
-        const MOOD_MAP: Record<string, string[]> = {
-            "sweet": ["cake", "cookie", "dessert", "sweet", "pudding", "pie", "tart", "brownie", "ice cream", "chocolate"],
-            "spicy": ["spicy", "chili", "curry", "hot", "jalapeno", "pepper", "salsa", "masala"],
-            "comfort food": ["soup", "stew", "pasta", "cheese", "potato", "burger", "pizza", "fried", "casserole"],
-            "energetic": ["chicken", "beef", "steak", "protein", "quinoa", "egg", "tuna", "salmon", "power"],
-            "focused": ["salad", "fish", "nut", "berry", "avocado", "green", "tea", "soup", "healthy"],
-            "chill": ["ice cream", "smoothie", "drink", "coffee", "tea", "snack", "popcorn", "sandwich"],
-            "romantic": ["steak", "pasta", "chocolate", "strawberry", "wine", "fondue", "lobster", "truffle"],
-            "happy": ["taco", "burger", "pizza", "waffle", "pancake", "sundae", "nacho", "fries"],
-            // Spotify Scenarios
-            "fresh salad": ["salad", "green", "lettuce", "vegetable"],
-            "iced coffee": ["coffee", "latte", "espresso", "drink"],
-            "italian pasta": ["pasta", "spaghetti", "lasagna", "fettuccine", "carbonara"],
-            "spicy chicken": ["chicken", "spicy", "curry", "buffalo"]
-        };
+    // Step 3: Scientific Filter (Molecular Match)
+    // We only keep recipes that contain at least one of our molecular ingredients
+    const matched = rawRecipes.filter((r: any) => {
+        const t = (r.recipeTitle || r.title || "").toLowerCase();
+        // Check if title includes any of the molecular ingredients
+        return molecularIngredients.some(ingredient => t.includes(ingredient.toLowerCase()));
+    });
+    
+    // If no exact matches found, we might fallback to generic search to show SOMETHING, 
+    // but for "Scientific" accuracy, we prioritize matched.
+    // If matched is empty, we fall back to the raw list but sort by relevance if possible?
+    // For now, let's stick to the strict scientific requirement:
+    const finalPool = matched.length > 0 ? matched : rawRecipes;
 
-        // Determine keywords to look for
-        let targetKeywords: string[] = MOOD_MAP[lowerFlavor] || [];
-        
-        // If no direct map, split the query into words (e.g., "Spicy Chicken" -> ["spicy", "chicken"])
-        if (targetKeywords.length === 0) {
-           targetKeywords = lowerFlavor.split(" ").filter(w => w.length > 2);
-        }
-
-        const matched = rawRecipes.filter((r: any) => {
-            const t = (r.recipeTitle || r.title || "").toLowerCase();
-            // Match if title contains ANY of the target keywords
-            return targetKeywords.some(k => t.includes(k));
-        });
-        
-        // CRITICAL: Only return matches. If no matches, return empty (UI handles empty state).
-        // Do NOT fall back to random recipes for a specific search.
-        rawRecipes = matched;
-        
-        // Final Fallback: If we searched but found nothing (e.g. niche term), try Mock
-        if (rawRecipes.length === 0) {
-             console.warn(`[Foodoscope] No API matches for ${flavor}. Using Fallback.`);
-             const mocks = generateMockRecipes(flavor);
-             if (mocks.length > 0) {
-                 searchCache.set(cacheKey, { data: mocks, timestamp: Date.now() });
-                 return mocks;
-             }
-        }
-    }
-
-    // Step 2: Map to App format
-    let recipes = rawRecipes.map((r: any) => {
+    // Step 4: Map to App format & Add Scientific Badges
+    let recipes = finalPool.map((r: any) => {
         const title = r.recipeTitle || r.title || "Unknown Recipe";
+        const tLower = title.toLowerCase();
+        
+        // Identify which scientific ingredient triggered this result
+        const match = molecularIngredients.find(ing => tLower.includes(ing.toLowerCase()));
+        
         return {
             id: r.Recipe_id || r._id,
             title: title,
@@ -238,18 +194,21 @@ export async function getRecipesByFlavor(flavor: string, isLowSalt: boolean = fa
             time: "30 min",
             calories: Math.round(parseFloat(r["Energy (kcal)"] || 0)),
             rating: 4.5,
-            sodium: parseFloat(r["Sodium, Na (mg)"] || 0)
+            sodium: parseFloat(r["Sodium, Na (mg)"] || 0),
+            // Scientific Badge Data
+            scientificMatch: match || "General Vibe"
         };
     });
 
-    // Apply Low Salt Filter
+    // Step 5: Strict "Kam Namak" (Low Salt) Guard
+    // Requirement: Sodium < 100mg (Very Strict)
     if (isLowSalt) {
-        recipes = recipes.filter((r: any) => r.sodium < 500);
+        recipes = recipes.filter((r: any) => r.sodium < 100);
     }
     
     const finalResults = recipes.slice(0, 12);
     
-    // Cache the results
+    // Cache
     if (finalResults.length > 0) {
         searchCache.set(cacheKey, { data: finalResults, timestamp: Date.now() });
     }

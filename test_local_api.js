@@ -4,7 +4,8 @@ async function testLocalApi() {
     const tests = [
         { name: "Focused Mood", url: `${baseUrl}?mood=focused` },
         { name: "Spotify Query (Italian Pasta)", url: `${baseUrl}?query=Italian%20Pasta` },
-        { name: "Happy Mood", url: `${baseUrl}?mood=happy` }
+        { name: "Happy Mood", url: `${baseUrl}?mood=happy` },
+        { name: "Health Goals (Keto+Vegan)", url: `${baseUrl}?goals=keto,vegan` }
     ];
 
     for (const t of tests) {

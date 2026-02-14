@@ -18,10 +18,8 @@ export const metadata: Metadata = {
 };
 
 import { AuthProvider } from "@/components/providers";
-
-// ... (imports)
-
-// ... (metadata)
+import { VibeProvider } from "@/lib/vibe-context";
+import MusicPlayer from "@/components/MusicPlayer";
 
 export default function RootLayout({
   children,
@@ -30,11 +28,12 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body
-        className={`${inter.variable} ${montserrat.variable} antialiased bg-background text-foreground`}
-      >
+      <body className={`${inter.variable} ${montserrat.variable} antialiased bg-background text-foreground`}>
         <AuthProvider>
-            {children}
+            <VibeProvider>
+                {children}
+                <MusicPlayer />
+            </VibeProvider>
         </AuthProvider>
       </body>
     </html>

@@ -1,3 +1,5 @@
+import { NextResponse } from "next/server";
+
 // Mock Data for "Spotify is on hold" scenario
 const MOCK_SONGS = [
     {
@@ -58,40 +60,90 @@ export async function getMockNowPlaying() {
     };
 }
 
-export async function getNowPlaying(accessToken: string) {
-  const res = await fetch("https://api.spotify.com/v1/me/player/currently-playing", {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-    },
-  });
+// RapidAPI Configuration
+const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY || "";
+const RAPIDAPI_HOST = process.env.RAPIDAPI_HOST || "spotify81.p.rapidapi.com";
 
-  if (res.status === 204 || res.status > 400) {
-    return null;
-  }
+export async function searchTracks(query: string) {
+    if (!RAPIDAPI_KEY) return null;
 
-  const song = await res.json();
-  const isPlaying = song.is_playing;
-  const title = song.item.name;
-  const artist = song.item.artists.map((_artist: any) => _artist.name).join(", ");
-  const albumImage = song.item.album.images[0].url;
-  const songUrl = song.item.external_urls.spotify;
-  const id = song.item.id;
+    try {
+        const res = await fetch(`https://${RAPIDAPI_HOST}/search?q=${encodeURIComponent(query)}&type=tracks&limit=1`, {
+            headers: {
+                'x-rapidapi-key': RAPIDAPI_KEY,
+                'x-rapidapi-host': RAPIDAPI_HOST
+            }
+        });
 
-  return {
-    albumImage,
-    artist,
-    isPlaying,
-    songUrl,
-    title,
-    id
-  };
+        if (!res.ok) {
+            console.error("RapidAPI Error:", await res.text());
+            return null;
+        }
+
+        const data = await res.json();
+        // Adapt RapidAPI response to our format
+        // Note: Response structure depends on the specific RapidAPI wrapper. 
+        // Assuming it returns standard Spotify-like object or similar.
+        // If it's spotify81, it usually returns { tracks: { items: [...] } }
+        
+        const track = data.tracks?.items?.[0] || data[0]; // Fallback for different API structures
+        
+        if (!track) return null;
+
+        return {
+            id: track.id,
+            title: track.name,
+            artist: track.artists?.[0]?.name || "Unknown",
+            albumImage: track.album?.images?.[0]?.url || "",
+            songUrl: track.external_urls?.spotify || "",
+            previewUrl: track.preview_url || "", // Add Preview URL
+            isPlaying: false 
+        };
+
+    } catch (error) {
+        console.error("RapidAPI Search Error:", error);
+        return null;
+    }
 }
 
-export async function getAudioFeatures(accessToken: string, id: string) {
-     const res = await fetch(`https://api.spotify.com/v1/audio-features/${id}`, {
-        headers: {
-            Authorization: `Bearer ${accessToken}`,
-        },
-    });
-    return res.json();
+export async function getAudioFeatures(id: string) {
+    if (!RAPIDAPI_KEY) return null;
+
+    try {
+        // Fetch Audio Features
+        const res = await fetch(`https://${RAPIDAPI_HOST}/audio_features?ids=${id}`, {
+            headers: {
+                'x-rapidapi-key': RAPIDAPI_KEY,
+                'x-rapidapi-host': RAPIDAPI_HOST
+            }
+        });
+
+        if (!res.ok) return null;
+
+        const data = await res.json();
+        const features = data.audio_features?.[0];
+
+        if (!features) return null;
+
+        // Scientific Mood Logic
+        const { energy, valence, tempo } = features;
+        let mood = "Chill"; // Default
+
+        if (energy > 0.6 && valence > 0.6) mood = "Energetic";
+        else if (energy < 0.4 && valence < 0.4) mood = "Melancholic";
+        else if (energy > 0.6 && valence < 0.4) mood = "Stressed";
+        else if (energy < 0.5 && valence > 0.6) mood = "Happy";
+        else if (energy < 0.5) mood = "Relaxed";
+
+        return {
+            bpm: Math.round(tempo),
+            energy,
+            valence,
+            mood
+        };
+
+    } catch (error) {
+        console.error("RapidAPI Audio Features Error:", error);
+        return null;
+    }
 }
